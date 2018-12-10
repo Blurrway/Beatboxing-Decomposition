@@ -3,9 +3,9 @@ Thank you for agreeing to participate in this experiment! Below are the
 some instructions on what to record. We would like to get a total of 10
 recordings from you. This should take under 20 minutes to complete
 (hopefully). If you have any questions at any point in the process,
-please contact one of us \[Sidney Cozier
+please contact one of us (Sidney Cozier
 ([scozier\@g.hmc.edu](mailto:scozier@g.hmc.edu)) or Ankoor
-Apte ([aapte\@g.hmc.edu](mailto:aapte@g.hmc.edu)). We
+Apte ([aapte\@g.hmc.edu](mailto:aapte@g.hmc.edu))). We
 hope that this will be a fun, relaxed recording session for you!
 
 **Here are some important guidelines on the recording process:**
@@ -96,7 +96,7 @@ Recordings 5-7: Beat Pattern 2
 ==============================
 
 Similarly, record this beat pattern at 80 bpm (rec5), 100 bpm (rec6),
-and 14 0 bpm (rec7)
+and 140 bpm (rec7)
 
 **4/4 time, 80/100/140 bpm**
 
