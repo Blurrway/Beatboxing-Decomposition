@@ -1,6 +1,10 @@
 # miscFuns.py
 # Module containing helpful functions for E190AP Final Project.
 
+import numpy as np
+import librosa as lb
+import matplotlib.pyplot as plt
+
 def arg(ang):
     ''' Principal argument function: Wraps input angle to value between -pi and pi. '''
     if ang>np.pi:
