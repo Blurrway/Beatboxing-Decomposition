@@ -28,13 +28,18 @@ def loadAudioCalcSTFT(mp3file):
     return x, sr, N, S, Smag, Sphase
 
 
-def plotWave(audio, t=None, t0=0, title='', sr=sr, short=False):
-    ''' Plot the time-energy waveform of a sound.
+def plotWave(audio, t=None, t0=0, title='', sr=None, short=False):
+    ''' Plot the time-energy waveform of a sound. Note that sr defaults to 22050 Hz.
         
         @param t      time range for plotting, given as [t0, t1]
         @param t0     start time, mainly if entire input audio is an excerpt from a longer recording
         @param short  toggles returning trimmed audio
     '''
+    
+    if sr=None:
+        print('WARNING: Sample rate not provided to plotWave. Sample rate has defaulted to 22050 Hz.')
+        sr=22050
+    
     if t==None:
         start = 0
         end = len(audio)-1
