@@ -36,7 +36,7 @@ def plotWave(audio, t=None, t0=0, title='', sr=None, short=False):
         @param short  toggles returning trimmed audio
     '''
     
-    if sr=None:
+    if sr==None:
         print('WARNING: Sample rate not provided to plotWave. Sample rate has defaulted to 22050 Hz.')
         sr=22050
     
