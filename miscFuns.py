@@ -5,6 +5,10 @@ import numpy as np
 import librosa as lb
 import matplotlib.pyplot as plt
 
+# In case we ever need an encoding
+sound2Num = {'B':0, 'Pf':1, 'Pch':2, 'K':3, '^Ksh':4, 'rrh':5, 't':6, 'ts':7, 'k':8, 'BB':9}
+num2Sound = {0:'B', 1:'Pf', 2:'Pch', 3:'K', 4:'^Ksh', 5:'rrh', 6:'t', 7:'ts', 8:'k', 9:'BB'}
+
 def arg(ang):
     ''' Principal argument function: Wraps input angle to value between -pi and pi. '''
     if ang>np.pi:
@@ -110,7 +114,7 @@ def calcADSR(sound, env, sr=None):
     if sr==None:
         print('WARNING: Sample rate not provided to ADSR. Sample rate has defaulted to 22050 Hz.')
         sr=22050
-    
+       
     thresh = 0.001 # Minimum sound level (envelope)
     min_slope = 3e-6 # minimum slope threshold (for steady state vs. release)
     slope_run = int(0.1*sr) # Step width for average slope calculation
@@ -131,21 +135,26 @@ def calcADSR(sound, env, sr=None):
     
     # Look for post-peak decay, sustain, and release.
     x_ss1 = x_ss2 = x_peak_env
-    inDecay = True
+    state = 'decay'
     for x,eVal in enumerate(env[x_peak_env:]):
         x += x_peak_env
-        slope = (env[min(x+slope_run, x_end)]-env[x])/(min(x+slope_run, x_end) - x)
+        x2 = min(x+slope_run, x_end) # Takes care of edge cases
+        slope = (env[x2]-env[x])/(x2 - x)
 #         print([x/sr+t[0],slope])
 
         if (eVal < thresh) or (x == x_end-1): # End of sound
             x_end = x # Minor off-by-one error?           
             break
             
-        elif inDecay and (np.abs(slope) < min_slope): # Start of a sustain/gradual release section
+        elif (state == 'decay') and (np.abs(slope) < min_slope): # Start of a sustain/gradual release section
+            print('Start of sustain:', x/sr)
             x_ss1 = x_ss2 = x # Initialize x_ss2 in case of no hard release
-            inDecay = False
-        elif (inDecay==False) and (np.abs(slope) >= min_slope): # Start of a hard release
+            state = 'sustain'
+            
+        elif (state == 'sustain') and (np.abs(slope) >= min_slope): # Start of a hard release
+            print('Start of hard release:', x/sr)
             x_ss2 = x
+            state = 'release'
             
     #print('x_start: {}, x_peak_env: {}, x_ss1: {}, x_ss2: {}, x_end: {}'.format(x_start, x_peak_env, x_ss1, x_ss2, x_end))
     attack = (x_peak_env-x_start)/sr
