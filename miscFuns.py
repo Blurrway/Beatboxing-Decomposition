@@ -147,12 +147,12 @@ def calcADSR(sound, env, sr=None):
             break
             
         elif (state == 'decay') and (np.abs(slope) < min_slope): # Start of a sustain/gradual release section
-            print('Start of sustain:', x/sr)
+#             print('Start of sustain:', x/sr)
             x_ss1 = x_ss2 = x # Initialize x_ss2 in case of no hard release
             state = 'sustain'
             
         elif (state == 'sustain') and (np.abs(slope) >= min_slope): # Start of a hard release
-            print('Start of hard release:', x/sr)
+#             print('Start of hard release:', x/sr)
             x_ss2 = x
             state = 'release'
             
