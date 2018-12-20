@@ -12,19 +12,24 @@ beat4b = '{ ts ts / ^Ksh ts / ts ts / ^Ksh ts }{ ts ts / ^Ksh ts / Pch - t / Pch
 beat4c = '{ BB / Pf k t k / B k t k / Pf } { BB / Pf k t k / B k t k / Pf Pf } { BB / Pf k t k / B k t k / Pf } { BB / Pf k t k / BB BB / dsh }'
 
 
-def sbn2gtDict(sbn, bpm, offset=0):
+def sbn2gtDict(sbn, bpm, offset=0, listOut=False):
     '''
     Generate ground truth sound dictionary from an SBN beat pattern (given as string). Outputs times at which each sound occurs,
     where the times are based on the given bpm.
 
     offset is an optional parameter for specifying how much offset the query has between the start of the recording
-    and the 
+    and the first onset. While the offset can always be added afterwards, it may be nice to add it here if it is known.
+
+    If listOut is set to True, the function outputs a list of tuples (sound-time pairs in their order of occurence).
+    This is a better output form for looking at the sequence of sounds. 
     '''
     beat = sbn.split() # splits up the beat by spaces
     period = 60/bpm # single beat period in seconds
-
-    soundDict = {}
+    
+    totalSoundList = []
+    totalSoundDict = {}
     t = offset # initialize time
+
     for i,sound in enumerate(beat):
         if sound == '{':
             sList = []
@@ -38,18 +43,27 @@ def sbn2gtDict(sbn, bpm, offset=0):
             for i,s in enumerate(sList): # Loop through sounds in this measure (again)
 
                 if s == 'tk': # Only duplet case in our beats
-                    if 't' not in soundDict:
-                        soundDict['t'] = []
-                    if 'k' not in soundDict:
-                        soundDict['k'] = []
+                    
+                    if listOut:
+                        totalSoundList += [('t', times[i])]
+                        totalSoundList += [('k', times[i] + dt/2)] # Approximation of duplet timing
+                    else:
+                        if 't' not in totalSoundDict:
+                            totalSoundDict['t'] = []
+                        if 'k' not in totalSoundDict:
+                            totalSoundDict['k'] = []
 
-                    soundDict['t'].append(times[i])
-                    soundDict['k'].append(times[i] + dt/2) # Approximation of duplet timing
+                        totalSoundDict['t'].append(times[i])
+                        totalSoundDict['k'].append(times[i] + dt/2) # Approximation of duplet timing
                     continue
                 
-                elif s not in soundDict:
-                    soundDict[s] = []
-                soundDict[s].append(times[i])
+                elif listOut:
+                    totalSoundList += [(s, times[i])]
+                
+                else:
+                    if s not in totalSoundDict:
+                        totalSoundDict[s] = []
+                    totalSoundDict[s].append(times[i])
 
             t += period # Move t to the start of next measure
             sList = []            
@@ -59,7 +73,10 @@ def sbn2gtDict(sbn, bpm, offset=0):
                 sound = 'ts' # Change to a 'ts' for dictionary purposes
             sList += [sound]        
 
-    if '-' in soundDict:
-        rests = soundDict.pop('-') # remove rests from dictionary
+    if '-' in totalSoundDict:
+        rests = totalSoundDict.pop('-') # remove rests from dictionary
 
-    return soundDict
+    if listOut: 
+        return totalSoundList
+    else: 
+        return totalSoundDict
