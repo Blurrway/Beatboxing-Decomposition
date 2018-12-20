@@ -154,7 +154,7 @@ def calcADSR(sound, env, sr=None):
 
 
 
-def sbn2gtDict(sbn, bpm, offset=0, listOut=False):
+def sbn2gtlabels(sbn, bpm, offset=0, listOut=False):
     '''
     Generate ground truth sound dictionary from an SBN beat pattern (given as string). Outputs times at which each sound occurs,
     where the times are based on the given bpm.
