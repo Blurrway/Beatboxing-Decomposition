@@ -9,22 +9,7 @@ import matplotlib.pyplot as plt
 sound2Num = {'B':0, 'Pf':1, 'Pch':2, 'K':3, '^Ksh':4, 'rrh':5, 't':6, 'ts':7, 'k':8, 'BB':9}
 num2Sound = {0:'B', 1:'Pf', 2:'Pch', 3:'K', 4:'^Ksh', 5:'rrh', 6:'t', 7:'ts', 8:'k', 9:'BB'}
 
-def arg(ang):
-    ''' Principal argument function: Wraps input angle to value between -pi and pi. '''
-    if ang>np.pi:
-        return arg(ang-2*np.pi)
-    elif ang<-np.pi:
-        return arg(ang+2*np.pi)
-    else:
-        return ang
-    
-def halfWave(r):
-    ''' returns r, half-wave rectified'''
-    if r >= 0:
-        return r
-    else:
-        return 0
-    
+
 def loadAudioCalcSTFT(mp3file):
     ''' Loads audio and calculates its STFT 
     '''
@@ -34,6 +19,7 @@ def loadAudioCalcSTFT(mp3file):
     Sphase = np.angle(S) #phase
     N = 1025 #librosa default window size
     return x, sr, N, S, Smag, Sphase
+
 
 
 def plotWave(audio, t=None, t0=0, title='', sr=None, short=False):
@@ -67,6 +53,7 @@ def plotWave(audio, t=None, t0=0, title='', sr=None, short=False):
     if short: return short_audio
     
 
+
 def envelope(sound, M=20, sr=22050):
     ''' Generates 1-sided sound envelope based on simple moving averaging method. In order to track the sound
         onset better, the averaging window is biased towards the past data points, rather than centered
@@ -98,6 +85,7 @@ def envelope(sound, M=20, sr=22050):
         sound[frame] = sum(sound[start:end])/(max(end-start,1)) 
     
     return sound
+
 
 
 def calcADSR(sound, env, sr=None):
@@ -163,3 +151,74 @@ def calcADSR(sound, env, sr=None):
     release = (x_end-1-x_ss2)/sr
     
     return attack, decay, sustain, release
+
+
+
+def sbn2gtDict(sbn, bpm, offset=0, listOut=False):
+'''
+Generate ground truth sound dictionary from an SBN beat pattern (given as string). Outputs times at which each sound occurs,
+where the times are based on the given bpm.
+
+offset is an optional parameter for specifying how much offset the query has between the start of the recording
+and the first onset. While the offset can always be added afterwards, it may be nice to add it here if it is known.
+
+If listOut is set to True, the function outputs a list of tuples (sound-time pairs in their order of occurence).
+This is a better output form for looking at the sequence of sounds. 
+'''
+beat = sbn.split() # splits up the beat by spaces
+period = 60/bpm # single beat period in seconds
+
+totalSoundList = []
+totalSoundDict = {}
+t = offset # initialize time
+
+for i,sound in enumerate(beat):
+    if sound == '{':
+        sList = []
+        continue
+        
+    elif (sound == '/') or (sound == '}'): # end of a beat period
+        numSounds = len(sList)
+        dt = period/numSounds
+        times = t + dt*np.arange(numSounds) # 0 time increase for first sound
+
+        for i,s in enumerate(sList): # Loop through sounds in this measure (again)
+
+            if s == 'tk': # Only duplet case in our beats
+                
+                if listOut:
+                    totalSoundList += [('t', times[i])]
+                    totalSoundList += [('k', times[i] + dt/2)] # Approximation of duplet timing
+                else:
+                    if 't' not in totalSoundDict:
+                        totalSoundDict['t'] = []
+                    if 'k' not in totalSoundDict:
+                        totalSoundDict['k'] = []
+
+                    totalSoundDict['t'].append(times[i])
+                    totalSoundDict['k'].append(times[i] + dt/2) # Approximation of duplet timing
+                continue
+            
+            elif listOut:
+                totalSoundList += [(s, times[i])]
+            
+            else:
+                if s not in totalSoundDict:
+                    totalSoundDict[s] = []
+                totalSoundDict[s].append(times[i])
+
+        t += period # Move t to the start of next measure
+        sList = []            
+
+    else: # You saw an actual sound (or rest)
+        if sound == 'dsh': 
+            sound = 'ts' # Change to a 'ts' for dictionary purposes
+        sList += [sound]        
+
+if '-' in totalSoundDict:
+    rests = totalSoundDict.pop('-') # remove rests from dictionary
+
+if listOut: 
+    return totalSoundList
+else: 
+    return totalSoundDict
