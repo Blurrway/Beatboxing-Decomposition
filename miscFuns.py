@@ -222,3 +222,40 @@ def sbn2gtlabels(sbn, bpm, offset=0, listOut=False):
         return totalSoundList
     else: 
         return totalSoundDict
+
+
+##########################
+
+
+def write_to_csv(filename, row=None, list_of_rows=None ):
+    """ readcsv takes as
+         + input:  csv_file_name, the name of a csv file
+        and returns
+         + output: a list of lists, each inner list is one row of the csv
+           all data items are strings; empty cells are empty strings
+    """
+    if (row==None) & (list_of_rows==None):
+        print('WARNING: Nothing written to csv file, no inputs provided.')
+        return
+
+    while True:
+        try:
+            csvfile = open( filename, "w", newline='' )
+            filewriter = csv.writer( csvfile, delimiter=",")
+
+            if row==None:
+                for row in list_of_rows:
+                    filewriter.writerow( row )
+            else:
+                filewriter.writerow(row)
+            
+            csvfile.close()
+            break
+
+        except FileNotFoundError:
+            print('File', filename, 'not found. Creating new file...')
+            os.mkdir(filename)
+        
+        except:
+            print("File", filename, "could not be opened for writing...")
+            break

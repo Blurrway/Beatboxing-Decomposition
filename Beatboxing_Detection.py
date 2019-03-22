@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import scipy.stats as ss
 import miscFuns as mf # python functions we wrote
 import sklearn.metrics as skm
+import pandas as pd
 
 
 # In[3]:
@@ -60,7 +61,7 @@ def loadAudioCalcSTFT(queryfile, sr=22050, hop_size=512, win_size=2048):
 # In[9]:
 
 
-def obtainObservations(audio, sr = 22050, backtrack=1000, model=False):
+def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all'):
     ''' input: audio data obtained from loadAudioandCalcSTFT
         output: tempo_bpm - int specifying estimated tempo
                 beats - list of sample indices of beat onsets
@@ -71,19 +72,24 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False):
     #get tempo
     tempo_bpm = lb.beat.tempo(audio, sr=sr)
     tempo_bpm = int(round(tempo_bpm[0]))
-    print("Tempo in bpm: ", tempo_bpm)
     
     #correct for rec1 error:
     if tempo_bpm <= 50:
-        print('Tempo miscalculated (<=50), multiplying by 4')
+        if disp == 'all':
+            print('Tempo miscalculated (<=50), multiplying by 4')
         tempo_bpm *= 4
+    
+    if disp == 'all':
+        print("Tempo in bpm: ", tempo_bpm)
     
     #determine eighth measure window size in samples
     tempo_bps = tempo_bpm/60.0
     quarterMeasure = 1/tempo_bps #time period for 1 beat, i.e. a quarter measure
     eighthMeasure = quarterMeasure/2
     win_size = int(round(eighthMeasure*sr)) #get window size in samples
-    print("8th measure window size:", win_size)
+    
+    if disp == 'all':
+        print("8th measure window size:", win_size)
     
     #set librosa peak picker parameters
     premax = int((win_size/2.0)/512.0)
@@ -120,7 +126,6 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False):
             obsvArray[:,i] = audio[onset-backtrack:onset+win_size-backtrack]
     
     return tempo_bpm, beats, obsvArray
-
 
 # In[10]:
 
@@ -159,7 +164,7 @@ def calcFeatures(obsv, returnFVL=False):
 # In[19]:
 
 
-def makeGeneralModel(rec1_directory='training_data/'):
+def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=False):
     ''' input: 
         path to folder containing all rec1s
     
@@ -182,21 +187,25 @@ def makeGeneralModel(rec1_directory='training_data/'):
     numFiles = len(filenames)
     fVecLen = 8
     
-    #output data
+    #output data initialization
     means = np.zeros((fVecLen, numDictSounds))
     covs = np.zeros((fVecLen, numDictSounds, fVecLen))
     transition_matrix = np.ones((numDictSounds,numDictSounds))/(numDictSounds**2) #Equal probabilities to avoid bias
     
-    #get fVec_accum
+    # get fVec_accum, which will hold the SUMS of feature vectors for each sound
     fVec_accum = np.zeros((fVecLen, numDictSounds))
-    print('Calculating means...')
+    all_fVecs = np.zeros(fVecLen+1)
+    if disp == 'all':
+        print('Calculating means...')
     for file in filenames:
-        print('File:', file)
+        if disp == 'all':
+            print('File:', file)
         #load audio and get observations+tempo
         audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
         tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
         numObsv = obsvArray.shape[1]
-        print('numObsv:', numObsv)
+        if disp == 'all':
+            print('numObsv:', numObsv)
         
         #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
         #we need this for the rest of the code to work
@@ -206,20 +215,40 @@ def makeGeneralModel(rec1_directory='training_data/'):
             (sNum, oNum) = divmod(obsv, 4) # Sound Number and observation number (4 observations of each sound)
             thisFeatVec = calcFeatures(obsvArray[:,obsv])
             fVec_accum[:,sNum] += thisFeatVec
+            if toCSV:
+                # snd = mf.num2Sound[sNum] # SBN text representation of sound
+                csv_row = np.append(thisFeatVec, sNum) # Label the features with the ground truth sound
+                all_fVecs = np.vstack(([all_fVecs, csv_row])) # Add labeled features to array
+                # mf.write_to_csv('rec1_feats.csv', row=csv_row)
             
+    if toCSV:
+        col_names = ['Avg. Energy', 'Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Decay', 'Sustain', 'Release', 'Sound SBN']
+        featVec_df = pd.DataFrame(all_fVecs[1:,:], columns=col_names)
+        featVec_df['Sound SBN'] = featVec_df['Sound SBN'].map(mf.num2Sound)
+        featVec_df.to_csv('rec1_feats.csv')
+        return featVec_df
+
+
     #calculate means
     means = np.divide(fVec_accum,4*numFiles)
     
     #get cov_accum
     cov_accum = np.zeros((fVecLen, numDictSounds, fVecLen))
-    print('Calculating covs...')
+    
+    if disp == 'all':
+        print('')
+        print('Calculating covs...')
+        
     for file in filenames:
-        print('File:', file)
+        if disp == 'all':
+            print('File:', file)
+            
         #load audio and get observations+tempo
         audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
         tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
         numObsv = obsvArray.shape[1]
-        print('numObsv:', numObsv)
+        if disp == 'all':
+            print('numObsv:', numObsv)
         
         #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
         #we need this for the rest of the code to work
@@ -237,8 +266,7 @@ def makeGeneralModel(rec1_directory='training_data/'):
     model = (transition_matrix, means, covs)
     return model
 
-
-def makeIndividualModel(person='rsalazar'):
+def makeIndividualModel(person):
     ''' Function for making model based on individual sound recordings, i.e. rec1
         
         @param person  The name associated with the recordings for which you want to make a model.
@@ -375,21 +403,40 @@ beat4a = '{ B t / B - / B ts / B - }{ B rrh / K t t B / K t t B / Pch } { B t / 
 beat4b = '{ ts ts / ^Ksh ts / ts ts / ^Ksh ts }{ ts ts / ^Ksh ts / Pch - t / Pch - Pch } { ts ts / ^Ksh ts / ts ts / ^Ksh ts } { Pch t t/ Pch - B / Pch - B / Pch } {dsh / - / - / -}'
 beat4c = '{ BB / Pf k t k / B k t k / Pf } { BB / Pf k t k / B k t k / Pf Pf } { BB / Pf k t k / B k t k / Pf } { BB / Pf k t k / BB BB / dsh }'
 
-rec9_choices = []
+rec9_choices = [0,0,2,0,0,1] # The actual beats performed in the rec9 recordings, where (0,1,2) maps to (4a,4b,4c) above
 
 
 # In[16]:
 
+## Helper Functions ##
+def filt(recNum, filenames):
+    ''' Filter filenames for 1 recording number'''
+    recStr = 'rec'+str(recNum)
+    f = lambda x: recStr in x
+    filenames = list(filter(f, filenames))
+    
+    return filenames
 
-def batchBeatboxingRecognition(dataPath='query_data/', recNum=0, model=None):
+
+def multiFilt(recNums, filenames):
+    ''' Filter filenames for multiple recording numbers using filt'''
+    newFilenames = []
+    for num in recNums:
+        newFilenames += filt(num, filenames)
+    
+    return newFilenames
+
+
+## Main Function ##
+def batchBeatboxingRecognition(dataPath='query_data/', recNums=[0], model=None, disp='all'):
+    ''' disp = 'all', 'res', or 'none'. 'res' gives results only
+    '''
     # Retrieve files from directory
     filenames = os.listdir(dataPath)
     
     # If specific recording specified, only take those
-    if recNum:
-        recStr = 'rec'+str(recNum)
-        filt = lambda x: recStr in x
-        filenames = list(filter(filt, filenames))
+    if recNums[0]:
+        filenames = multiFilt(recNums, filenames)
     
     # Remove any extra files
     if 'desktop.ini' in filenames:
@@ -400,7 +447,8 @@ def batchBeatboxingRecognition(dataPath='query_data/', recNum=0, model=None):
     modelOut=False
     if model == None:
         modelOut = True
-        model = makeGeneralModel('training_data/')
+        model = csv2model() # Possibly error-check for csv files
+#         model = makeGeneralModel('training_data/')
     
     multChoiceRes = []
     freeTempoRes = []
@@ -408,11 +456,12 @@ def batchBeatboxingRecognition(dataPath='query_data/', recNum=0, model=None):
 
     for file in filenames:
         fullName = dataPath + file
-        print(file)
+        if disp == 'all':
+            print(file)
         
         #Get observations from audio
         audio, sr, Smag = loadAudioCalcSTFT(fullName)
-        tempo, beats, obsvArray = obtainObservations(audio)        
+        tempo, beats, obsvArray = obtainObservations(audio, disp=disp)        
         output = runBeatboxingRecognitionHMM(beats, obsvArray, model) # List of sound-time tuples
         
         # Separate into sounds and times
@@ -423,44 +472,62 @@ def batchBeatboxingRecognition(dataPath='query_data/', recNum=0, model=None):
         result = testResults(output_sounds, recNum, tempo) # Test procedure changes depending on recording
         
         if recNum == 9:
-            print('Adding result to multChoiceRes')
+            if disp == 'all':
+                print('Adding result to multChoiceRes')
             multChoiceRes += [result]
         elif recNum == 8:
-            print('Adding result to freeTempoRes')
+            if disp == 'all':
+                print('Adding result to freeTempoRes')
             freeTempoRes += [result]
         else:
-            print('Adding result to absGTRes')
+            if disp == 'all':
+                print('Adding result to absGTRes')
             absGTRes += [result]     
-        print('')
+        if disp == 'all':
+            print('')
     
     # Print results
-    print('Raw sound match percentages (absGTRes, freeTempoRes, multChoiceRes):')
-    print([absGTRes, freeTempoRes, multChoiceRes])
+    if (disp == 'res') or (disp == 'all'):
+        print('Raw sound match percentages (absGTRes, freeTempoRes):')
+        print([absGTRes, freeTempoRes])
     
-    # Print Summary statistics
-    if len(absGTRes) > 0:
-        agtrStats = ss.describe(absGTRes)
-        print('Absolute Ground Truth Stats for {}:'.format(dataPath[:-1]))
-        print(agtrStats)
-        print('')
-    if len(freeTempoRes) > 0:
-        ftrStats = ss.describe(freeTempoRes)
-        print('Free Tempo Stats for {}:'.format(dataPath[:-1]))
-        print(ftrStats)
-        print('')
-    if len(multChoiceRes) > 0:
-        mcrStats = ss.describe(multChoiceRes)
-        print('Multiple Choice Ground Truth Stats for {}:'.format(dataPath[:-1]))
-        print(mcrStats) 
-        print('')
+        
+        agtNums = [n for n in recNums if n <= 4]
+        ftrNums = [n for n in recNums if n in [5,6,7]]
+        
+        # Print Summary statistics
+        if len(absGTRes) > 0:
+            agtrStats = ss.describe(absGTRes)
+            print('Absolute Ground Truth Stats for {}, recording(s) {}:'.format(dataPath[:-1], agtNums))
+            print(agtrStats)
+            print('')
+        if len(freeTempoRes) > 0:
+            ftrStats = ss.describe(freeTempoRes)
+            print('Free Tempo Stats for {}, recording(s) {}:'.format(dataPath[:-1], ftrNums))
+            print(ftrStats)
+            print('')
+        if len(multChoiceRes) > 0:
+            matches = 0
+            for i, res in enumerate(multChoiceRes):
+                if res == rec9_choices[i]:
+                    matches += 1
+            
+            mcrStats = float(matches)/float(len(multChoiceRes))*100
+            print('Multiple Choice Ground Truth Results for {}, recording 9:'.format(dataPath[:-1]))
+            print('Predicted patterns:', multChoiceRes)
+            print('Ground Truth patterns:', rec9_choices)
+            print('Match rate: {}%'.format(mcrStats))
+            print('')
+
+        print('') 
     
-    print('') 
+    
     if modelOut:
         return multChoiceRes, freeTempoRes, absGTRes, model
     else:
         return multChoiceRes, freeTempoRes, absGTRes
-
-
+    
+    
 # In[17]:
 
 
@@ -518,7 +585,7 @@ def testResults(output_sounds, recNum, tempo):
 
 
 def model2csv(model, title='', output=False):
-    '''
+    ''' model2csv(model, title='', output=False)
     Makes csv files of the means and covariances as a record of the model.
     
     @param model  tuple of transition matrix, means, and covariances from makeGeneralModel or makeIndividualModel
@@ -602,3 +669,13 @@ def csv2model(mean_csv='general-model_means.csv', cov_csv='general-model_covs.cs
         covs[:,sInd,:] = flatCovs[start:start+fVecLen,:]
     
     return (transition_matrix, means, covs)
+
+
+
+
+def main():
+    print('Starting main...')
+    featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=True)
+
+if __name__ == '__main__':
+    main()
