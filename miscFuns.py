@@ -228,11 +228,11 @@ def sbn2gtlabels(sbn, bpm, offset=0, listOut=False):
 
 
 def write_to_csv(filename, row=None, list_of_rows=None ):
-    """ readcsv takes as
-         + input:  csv_file_name, the name of a csv file
-        and returns
-         + output: a list of lists, each inner list is one row of the csv
-           all data items are strings; empty cells are empty strings
+    """ Writes a list of rows to a csv file.
+            
+            @param filename      [str] name of output csv file (including .csv)
+            @param list_of_rows  [2D list] List of the rows to be written to csv
+            @param row           [list] Single row to be written to csv
     """
     if (row==None) & (list_of_rows==None):
         print('WARNING: Nothing written to csv file, no inputs provided.')

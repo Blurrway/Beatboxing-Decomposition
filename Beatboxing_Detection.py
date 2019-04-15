@@ -15,13 +15,13 @@
 # ### Set up dependencies
 # Import statements, matplotlib and global variables
 
-# In[1]:
+# %%
 
 
 # get_ipython().run_line_magic('matplotlib', 'inline')
 
 
-# In[2]:
+# %%
 
 
 import numpy as np
@@ -35,7 +35,7 @@ import sklearn.metrics as skm
 import pandas as pd
 
 
-# In[3]:
+# %%
 
 
 #Global variables
@@ -45,7 +45,7 @@ sr = 22050
 
 # ### Observations functions
 
-# In[8]:
+# %%
 
 
 def loadAudioCalcSTFT(queryfile, sr=22050, hop_size=512, win_size=2048):
@@ -58,7 +58,7 @@ def loadAudioCalcSTFT(queryfile, sr=22050, hop_size=512, win_size=2048):
     return y, sr, Smag #we only use Smag
 
 
-# In[9]:
+# %%
 
 
 def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all'):
@@ -105,6 +105,7 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all
     
     #convert to samples
     beats = lb.frames_to_samples(beats_frames)
+    print(beats.shape)
     
     #create observations array
     if model == True: 
@@ -112,7 +113,7 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all
     #this would be addressed in future iterations
         numObsv = 40 
     else:
-        numObsv = numObsv = beats.shape[0]
+        numObsv = beats.shape[0]
     obsvArray = np.zeros((win_size, numObsv))
     for i in range(numObsv):
         if i < beats.shape[0]:
@@ -127,7 +128,7 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all
     
     return tempo_bpm, beats, obsvArray
 
-# In[10]:
+# %%
 
 
 def calcFeatures(obsv, returnFVL=False): 
@@ -161,10 +162,10 @@ def calcFeatures(obsv, returnFVL=False):
 # ### Model functions
 # Functions used to train the model - there are two types, a general model that includes all the training data, and an individual-specific model that uses the data for one person
 
-# In[19]:
+# %%
 
 
-def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=False):
+def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'']):
     ''' input: 
         path to folder containing all rec1s
     
@@ -221,11 +222,11 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=False):
                 all_fVecs = np.vstack(([all_fVecs, csv_row])) # Add labeled features to array
                 # mf.write_to_csv('rec1_feats.csv', row=csv_row)
             
-    if toCSV:
+    if toCSV[0]:
         col_names = ['Avg. Energy', 'Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Decay', 'Sustain', 'Release', 'Sound SBN']
         featVec_df = pd.DataFrame(all_fVecs[1:,:], columns=col_names)
         featVec_df['Sound SBN'] = featVec_df['Sound SBN'].map(mf.num2Sound)
-        featVec_df.to_csv('rec1_feats.csv')
+        featVec_df.to_csv(toCSV[1])
         return featVec_df
 
 
@@ -265,6 +266,7 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=False):
     
     model = (transition_matrix, means, covs)
     return model
+
 
 def makeIndividualModel(person):
     ''' Function for making model based on individual sound recordings, i.e. rec1
@@ -315,7 +317,7 @@ def makeIndividualModel(person):
 # ### State functions
 # Functions used to estimate the states, given observations and a model.
 
-# In[13]:
+# %%
 
 
 def generatePairwiseSimilarityMatrix(F, means, covar):
@@ -345,7 +347,7 @@ def generatePairwiseSimilarityMatrix(F, means, covar):
     return S
 
 
-# In[14]:
+# %%
 
 
 def runBeatboxingRecognitionHMM(beats, obsvArray, model):
@@ -384,7 +386,7 @@ def runBeatboxingRecognitionHMM(beats, obsvArray, model):
 
 # ### Performance Evaluation
 
-# In[15]:
+# %%
 
 
 # ABSOLUTE GROUND TRUTHS
@@ -406,7 +408,7 @@ beat4c = '{ BB / Pf k t k / B k t k / Pf } { BB / Pf k t k / B k t k / Pf Pf } {
 rec9_choices = [0,0,2,0,0,1] # The actual beats performed in the rec9 recordings, where (0,1,2) maps to (4a,4b,4c) above
 
 
-# In[16]:
+# %%
 
 ## Helper Functions ##
 def filt(recNum, filenames):
@@ -528,7 +530,7 @@ def batchBeatboxingRecognition(dataPath='query_data/', recNums=[0], model=None, 
         return multChoiceRes, freeTempoRes, absGTRes
     
     
-# In[17]:
+# %%
 
 
 def testResults(output_sounds, recNum, tempo):
@@ -675,7 +677,8 @@ def csv2model(mean_csv='general-model_means.csv', cov_csv='general-model_covs.cs
 
 def main():
     print('Starting main...')
-    featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=True)
+    # featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=True)
+    featVec_df = makeGeneralModel(rec1_directory='freestyle_data/', disp='all', toCSV=[True, 'freestyle_feats.csv'])
 
 if __name__ == '__main__':
     main()
