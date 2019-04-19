@@ -29,13 +29,6 @@ except ImportError:
 
 
 # %%
-# print("+++ Start of pandas' datahandling +++\n")
-df = pd.read_csv('rec1_feats.csv', header=0)
-# df.head()
-# df.info()
-print(df.iloc[0:2,1:9])
-
-# %%
 def trainML(dataFile, classifier, params={}):
     ''' Train a machine learning model on training data
 
