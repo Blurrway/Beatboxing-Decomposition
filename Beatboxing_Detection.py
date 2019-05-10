@@ -30,9 +30,11 @@ import librosa as lb
 import matplotlib.pyplot as plt
 # import IPython.display as ipd
 import scipy.stats as ss
-import miscFuns as mf # python functions we wrote
 import sklearn.metrics as skm
 import pandas as pd
+
+import miscFuns as mf # Misc. helper functions
+import multiML # Machine learning pipeline
 
 
 # %%
@@ -61,7 +63,7 @@ def loadAudioCalcSTFT(queryfile, sr=22050, hop_size=512, win_size=2048):
 # %%
 
 
-def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all'):
+def obtainObservations(audio, sr = 22050, backtrack=1000, numObsv=40, model=False, disp='all'):
     ''' input: audio data obtained from loadAudioandCalcSTFT
         output: tempo_bpm - int specifying estimated tempo
                 beats - list of sample indices of beat onsets
@@ -112,8 +114,8 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all
     #we hard-code size of obsvArray to be 40 for model training, because all our training data contains 40 known observations
     #this would be addressed in future iterations
         numObsv = 40 
-    else:
-        numObsv = beats.shape[0]
+    # else:
+    #     numObsv = beats.shape[0]
     obsvArray = np.zeros((win_size, numObsv))
     for i in range(numObsv):
         if i < beats.shape[0]:
@@ -134,7 +136,7 @@ def obtainObservations(audio, sr = 22050, backtrack=1000, model=False, disp='all
 def calcFeatures(obsv, returnFVL=False): 
     '''single obsv: a 1D array representing samples over an eighth measure containing a percussion sound
        returns a feature vector'''
-    fVecLen = 8
+    fVecLen = 5 
     F = np.zeros(fVecLen)
     stft = np.abs(lb.core.stft(obsv))
     env = mf.envelope(obsv)
@@ -142,16 +144,17 @@ def calcFeatures(obsv, returnFVL=False):
     #calculate feature parameters
     maxInd = np.argmax(stft) # Linear/Flattened Index
     maxInds = np.unravel_index(maxInd, stft.shape)
-    attack, decay, sustain, release = mf.calcADSR(obsv, env, sr=22050)
+    # attack, decay, sustain, release = mf.calcADSR(obsv, env, sr=22050)
+    attack, release = mf.calcAR(obsv, env, sr=22050)
     
-    F[0] = np.average(obsv) # May or may not keep
-    F[1] = maxInds[0] # Frequency (DFT index)
-    F[2] = maxInds[1] # Time (in frames)
-    F[3] = np.max(stft)   
-    F[4] = attack
-    F[5] = decay
-    F[6] = sustain
-    F[7] = release
+    # F[0] = np.average(obsv) # May or may not keep
+    F[0] = maxInds[0] # Frequency (DFT index)
+    F[1] = maxInds[1] # Time (in frames)
+    F[2] = np.max(stft)   
+    F[3] = attack
+    F[4] = release
+    # F[6] = sustain
+    # F[7] = release
     
     if returnFVL:
         return F, fVecLen
@@ -165,7 +168,7 @@ def calcFeatures(obsv, returnFVL=False):
 # %%
 
 
-def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'']):
+def makeGeneralModel(rec1_directory='training_data/', disp='all', modelType='hmm', params=None, toCSV=[False,'rec1_feats.csv'], fVecLen=8, numObsv=40):
     ''' input: 
         path to folder containing all rec1s
     
@@ -180,18 +183,15 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'
                 means - an array of size (fVecLen, 10) where means[:,i] specifies the mean feature vector for sound type i
                 covs - an array of size (fVecLen, 10, fVecLen) where cov[:,i,:] specifies the covariance matrix for sound type i
     '''
-    filenames = os.listdir(rec1_directory)
+    filenames = list(os.walk(rec1_directory))
+    filenames = filenames[0][2] # isolate the list of filenames
     if '.DS_Store' in filenames:
         filenames.remove('.DS_Store')
     
     #parameters
     numFiles = len(filenames)
-    fVecLen = 8
     
-    #output data initialization
-    means = np.zeros((fVecLen, numDictSounds))
-    covs = np.zeros((fVecLen, numDictSounds, fVecLen))
-    transition_matrix = np.ones((numDictSounds,numDictSounds))/(numDictSounds**2) #Equal probabilities to avoid bias
+   
     
     # get fVec_accum, which will hold the SUMS of feature vectors for each sound
     fVec_accum = np.zeros((fVecLen, numDictSounds))
@@ -203,7 +203,7 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'
             print('File:', file)
         #load audio and get observations+tempo
         audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
-        tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
+        tempo, beats, obsvArray = obtainObservations(audio, sr=22050, numObsv=numObsv) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
         numObsv = obsvArray.shape[1]
         if disp == 'all':
             print('numObsv:', numObsv)
@@ -216,56 +216,69 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'
             (sNum, oNum) = divmod(obsv, 4) # Sound Number and observation number (4 observations of each sound)
             thisFeatVec = calcFeatures(obsvArray[:,obsv])
             fVec_accum[:,sNum] += thisFeatVec
-            if toCSV:
+            if toCSV[0]:
                 # snd = mf.num2Sound[sNum] # SBN text representation of sound
                 csv_row = np.append(thisFeatVec, sNum) # Label the features with the ground truth sound
                 all_fVecs = np.vstack(([all_fVecs, csv_row])) # Add labeled features to array
                 # mf.write_to_csv('rec1_feats.csv', row=csv_row)
             
-    if toCSV[0]:
-        col_names = ['Avg. Energy', 'Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Decay', 'Sustain', 'Release', 'Sound SBN']
-        featVec_df = pd.DataFrame(all_fVecs[1:,:], columns=col_names)
-        featVec_df['Sound SBN'] = featVec_df['Sound SBN'].map(mf.num2Sound)
-        featVec_df.to_csv(toCSV[1])
-        return featVec_df
 
+    if modelType == 'hmm':
 
-    #calculate means
-    means = np.divide(fVec_accum,4*numFiles)
-    
-    #get cov_accum
-    cov_accum = np.zeros((fVecLen, numDictSounds, fVecLen))
-    
-    if disp == 'all':
-        print('')
-        print('Calculating covs...')
+        # output data initialization
+        means = np.zeros((fVecLen, numDictSounds))
+        covs = np.zeros((fVecLen, numDictSounds, fVecLen))
+        transition_matrix = np.ones((numDictSounds,numDictSounds))/(numDictSounds**2) #Equal probabilities to avoid bias
+
+        #calculate means
+        means = np.divide(fVec_accum,4*numFiles)
         
-    for file in filenames:
+        #get cov_accum
+        cov_accum = np.zeros((fVecLen, numDictSounds, fVecLen))
+        
         if disp == 'all':
-            print('File:', file)
+            print('')
+            print('Calculating covs...')
             
-        #load audio and get observations+tempo
-        audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
-        tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
-        numObsv = obsvArray.shape[1]
-        if disp == 'all':
-            print('numObsv:', numObsv)
+        for file in filenames:
+            if disp == 'all':
+                print('File:', file)
+                
+            #load audio and get observations+tempo
+            audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
+            tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
+            numObsv = obsvArray.shape[1]
+            if disp == 'all':
+                print('numObsv:', numObsv)
+            
+            #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
+            #we need this for the rest of the code to work
+            
+            #iterate through observations
+            for obsv in range(numObsv):
+                (sNum, oNum) = divmod(obsv, 4) # Sound Number and observation number (4 observations of each sound)
+                thisFeatVec = calcFeatures(obsvArray[:,obsv])
+                diff = thisFeatVec - means[:,sNum]
+                cov_accum[:,sNum,:] += np.outer(diff, diff)
         
-        #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
-        #we need this for the rest of the code to work
+        #calculate covs
+        covs = np.divide(cov_accum,(4*numFiles)-1)
         
-        #iterate through observations
-        for obsv in range(numObsv):
-            (sNum, oNum) = divmod(obsv, 4) # Sound Number and observation number (4 observations of each sound)
-            thisFeatVec = calcFeatures(obsvArray[:,obsv])
-            diff = thisFeatVec - means[:,sNum]
-            cov_accum[:,sNum,:] += np.outer(diff, diff)
-    
-    #calculate covs
-    covs = np.divide(cov_accum,(4*numFiles)-1)
-    
-    model = (transition_matrix, means, covs)
-    return model
+        model = (transition_matrix, means, covs)
+        return model
+
+    else: # All other ML classifiers
+        
+        featfile = toCSV[1]
+        if toCSV[0]:
+            # col_names = ['Avg. Energy', 'Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Decay', 'Sustain', 'Release', 'Sound SBN']
+            col_names = ['Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Release', 'Sound SBN'] # For reduced features
+            featVec_df = pd.DataFrame(all_fVecs[1:,:], columns=col_names)
+            featVec_df['Sound SBN'] = featVec_df['Sound SBN'].map(mf.num2Sound)
+            featVec_df.to_csv(featfile)
+            # return featVec_df
+        
+        
 
 
 def makeIndividualModel(person):
@@ -350,13 +363,16 @@ def generatePairwiseSimilarityMatrix(F, means, covar):
 # %%
 
 
-def runBeatboxingRecognitionHMM(beats, obsvArray, model):
+def runBeatboxingRecognitionHMM(beats, obsvArray, model=None, toCSV=[False, '', 'add'], numFeats=8):
     '''
     Estimate the beatboxing sound given an array of sounds
     
     Arguments:
     obsvArray -- array of shape (m,n) where m is the 8th measure window size and n is the number of observations in the audio recording
-    model -- trained hidden markov model
+    model -- trained hidden markov model (fine to skip for CSV output)
+    toCSV -- toCSV[0] toggles whether CSV output is executed.
+             toCSV[1] is the title of the output file.
+             toCSV[2] determines whether to overwrite current file or add to it. ('add' or 'over')
     
     Returns:
     soundDict -- dictionary where the keys are the ten pre-defined beatboxing sounds, and the values are lists of the 
@@ -364,21 +380,35 @@ def runBeatboxingRecognitionHMM(beats, obsvArray, model):
     this can be used to make transcriptions of the beatboxing recording
     '''
     soundDict = {}
-
     numObsv = obsvArray.shape[1]
-    (transition_matrix, means, covar) = model
-    
-    numFeats = 8
+        
     F = np.zeros((numFeats,numObsv))
     for obsv in range(numObsv):
         F[:,obsv] = calcFeatures(obsvArray[:,obsv])
 
-    S = generatePairwiseSimilarityMatrix(F, means, covar) 
-    
-    beat_transcription = []
-    
-    for obsv in range(numObsv):
-        beat_transcription += [(mf.num2Sound[np.argmax(S[:,obsv])], beats[obsv]/np.float64(sr))]
+    if model != None:
+        (transition_matrix, means, covar) = model
+        S = generatePairwiseSimilarityMatrix(F, means, covar) 
+
+        beat_transcription = []
+        for obsv in range(numObsv):
+            beat_transcription += [(mf.num2Sound[np.argmax(S[:,obsv])], beats[obsv]/np.float64(sr))]
+
+    if toCSV[0]:
+        all_fVecs = np.transpose(F) # Put fVecs in rows
+
+        exists = os.path.isfile(toCSV[1]) # Checks if the file exists
+        
+        if (toCSV[2] == 'over') or (not exists):
+            col_names = ['Avg. Energy', 'Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Decay', 'Sustain', 'Release', 'Sound SBN']
+            featVec_df = pd.DataFrame(all_fVecs[1:,:], columns=col_names)
+            featVec_df['Sound SBN'] = featVec_df['Sound SBN'].map(mf.num2Sound)
+            featVec_df.to_csv(toCSV[1])
+
+        # elif toCSV[2] == 'add':
+
+
+        return beat_transcription, featVec_df
     
     return beat_transcription
 
@@ -434,7 +464,8 @@ def batchBeatboxingRecognition(dataPath='query_data/', recNums=[0], model=None, 
     ''' disp = 'all', 'res', or 'none'. 'res' gives results only
     '''
     # Retrieve files from directory
-    filenames = os.listdir(dataPath)
+    filenames = list(os.walk(dataPath))
+    filenames = filenames[0][2]
     
     # If specific recording specified, only take those
     if recNums[0]:
@@ -673,12 +704,30 @@ def csv2model(mean_csv='general-model_means.csv', cov_csv='general-model_covs.cs
     return (transition_matrix, means, covs)
 
 
-
+# %%
 
 def main():
     print('Starting main...')
-    # featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=True)
-    featVec_df = makeGeneralModel(rec1_directory='freestyle_data/', disp='all', toCSV=[True, 'freestyle_feats.csv'])
+    fVecLen = 5
+    # featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', modelType='rf', toCSV=[True, 'rec1_feats.csv', 'over'], fVecLen=fVecLen)
+    # featVec_df = makeGeneralModel(rec1_directory='freestyle_data/', disp='all', modelType='rf', toCSV=[True, 'freestyle_feats.csv', 'over'], fVecLen=fVecLen)
+
+    beat1_obsv = 32
+    beat2_obsv = 26
+    beat3_obsv = 38
+
+    featVec_df = makeGeneralModel(rec1_directory='query_data/beat1/', disp='all', modelType='rf', 
+        toCSV=[True, 'beat1_feats.csv', 'over'], fVecLen=fVecLen, numObsv=beat1_obsv)
+
+
+    # audio, sr, Smag = loadAudioCalcSTFT(filepath)
+    # tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True)
+    # beat_transcription, runBeatboxingRecognitionHMM(beats, obsvArray, toCSV=[False, '', 'add'])
+
+    # filenames = list(os.walk('query_data/beat1/'))
+    # print(filenames[0][2])
 
 if __name__ == '__main__':
     main()
+
+

@@ -88,6 +88,56 @@ def envelope(sound, M=20, sr=22050):
 
 
 
+def calcAR(sound, env, sr=None):
+    ''' calcAR is a simplified version of calcADSR that only calculates
+        attack (onset to peak) and release (peak to end).
+
+        The idea behind this simplified version is that it a) should give 
+        more consistent results across all of the sounds, b) uses the
+        most important features of ADSR (as determined by RF feature
+        importance), and c) removes extra parameters and ambiguous cases.
+
+        This simplified version should still capture the difference between
+        short and sustained sounds since the release will be very different.
+    '''
+
+    if sr==None:
+        print('WARNING: Sample rate not provided to ADSR. Sample rate has defaulted to 22050 Hz.')
+        sr=22050
+       
+    thresh = 0.001 # Minimum sound level (envelope)
+    
+#     x_peak = argmax(sound) # Should this be used?
+    x_peak_env = np.argmax(env)
+    
+    # Initialize variables
+    x_start = 0
+    x_end = len(sound)-1
+    
+    # Look for start of sound
+    for x,eVal in enumerate(env):
+        if eVal > thresh: # Start of sound
+            x_start = x
+            break
+    
+    # Look for end of sound.
+    x_ss1 = x_ss2 = x_peak_env
+    state = 'decay'
+    for x,eVal in enumerate(env[x_peak_env:]):
+        x += x_peak_env
+
+        if (eVal < thresh) or (x == x_end-1): # End of sound
+            x_end = x # Minor off-by-one error?           
+            break
+            
+    #print('x_start: {}, x_peak_env: {}, x_end: {}'.format(x_start, x_peak_env, x_ss1, x_ss2, x_end))
+    attack = (x_peak_env-x_start)/sr
+    release = (x_end-x_peak_env)/sr
+    
+    return attack, release
+
+
+
 def calcADSR(sound, env, sr=None):
     ''' sound is the time-energy representation (raw audio data)
         x variables are in samples, t variables are in seconds

@@ -116,7 +116,7 @@ def trainML(dataFile, classifier, params={}):
     # df.head()                                 # first five lines
     # df.info()                                 # column details
 
-    X_train = df.iloc[:,1:9]
+    X_train = df.iloc[:,1:6]
     Y_train = df['Sound SBN']
     # Y_train = df['Sound SBN'].map(mf.num2Sound) # In case we need numbers instead of letters
 
@@ -185,6 +185,11 @@ def trainML(dataFile, classifier, params={}):
         model = ensemble.RandomForestClassifier(max_depth=MAX_DEPTH, n_estimators=NUM_TREES)
         model = model.fit(X_train, Y_train)
 
+        if params['feat_import']:
+            print("\nrforest.feature_importances_ are\n      ", model.feature_importances_) 
+            # print("Order:", feature_names[0:4])
+
+
     else:
         print('WARNING: No classifier provided. Defaulting to knn...')
 
@@ -211,18 +216,23 @@ def main():
     kn1_params = {'P': 10, 'target': 0.0001, 'avgLim': 0.95, 'disp': 1}
     kn2_params = {'k': 18} # Best K for freestyle data
 
-    rf_params = {'max_depth': 4, 'num_trees': 100}
-    nn_params = {'hidden_layer_sizes': (20,15,10)} # 'max_iter': 200, 'alpha': 1e-4, 'learning_rate_init': 0.1
+    rf_params = {'max_depth': 4, 'num_trees': 100, 'feat_import': True}
+    nn_params = {'hidden_layer_sizes': (10,10)} # 'max_iter': 200, 'alpha': 1e-4, 'learning_rate_init': 0.1
 
 
-    model = trainML('rec1_feats.csv', 'nn', params=nn_params)
+    model = trainML('rec1_feats.csv', 'rf', params=rf_params)
 
-    freestyle_df = pd.read_csv('freestyle_feats.csv', header=0) # read the file w/header row #0
-    X_unlabeled = freestyle_df.iloc[:,1:9]
+    freestyle_df = pd.read_csv('beat1_feats.csv', header=0) # read the file w/header row #0
+    X_unlabeled = freestyle_df.iloc[:,1:6]
     Y_unlabeled = freestyle_df['Sound SBN']
 
     pred_labels = model.predict(X_unlabeled)
-    print(pred_labels[:20])
+    print('\nBeat 1 sound predictions')
+    print(pred_labels[:32])
+    print('')
+    print(pred_labels[32:64])
+    print('')
+    print(pred_labels[64:96])
 
 
 if __name__ == '__main__':
