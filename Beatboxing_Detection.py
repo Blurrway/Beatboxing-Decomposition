@@ -41,6 +41,7 @@ import pandas as pd
 #Global variables
 numDictSounds = 10
 sr = 22050
+FILE_ENDINGS = ('wav', 'mp3') # Only wav files tested, but mp3 should work too
 
 
 # ### Observations functions
@@ -165,7 +166,7 @@ def calcFeatures(obsv, returnFVL=False):
 # %%
 
 
-def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'']):
+def makeGeneralModel(rec1_directory='training_data/', disp='all', modelType='hmm', params=None, toCSV=[False,'rec1_feats.csv'], fVecLen=8, totalNumObsv=40):
     ''' input: 
         path to folder containing all rec1s
     
@@ -188,11 +189,6 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'
     numFiles = len(filenames)
     fVecLen = 8
     
-    #output data initialization
-    means = np.zeros((fVecLen, numDictSounds))
-    covs = np.zeros((fVecLen, numDictSounds, fVecLen))
-    transition_matrix = np.ones((numDictSounds,numDictSounds))/(numDictSounds**2) #Equal probabilities to avoid bias
-    
     # get fVec_accum, which will hold the SUMS of feature vectors for each sound
     fVec_accum = np.zeros((fVecLen, numDictSounds))
     all_fVecs = np.zeros(fVecLen+1)
@@ -203,18 +199,18 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'
             print('File:', file)
         #load audio and get observations+tempo
         audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
-        tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
-        numObsv = obsvArray.shape[1]
+        tempo, beats, obsvArray = obtainObservations(audio, sr=22050, numObsv=totalNumObsv) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
+        totalNumObsv = obsvArray.shape[1]
         if disp == 'all':
-            print('numObsv:', numObsv)
+            print('numObsv:', totalNumObsv)
         
         #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
         #we need this for the rest of the code to work
         
         #iterate through observations
-        for obsv in range(numObsv):
-            (sNum, oNum) = divmod(obsv, 4) # Sound Number and observation number (4 observations of each sound)
-            thisFeatVec = calcFeatures(obsvArray[:,obsv])
+        for obsvNum in range(totalNumObsv):
+            (sNum, oNum) = divmod(obsvNum, 4) # Sound Number and observation number (4 observations of each sound)
+            thisFeatVec = calcFeatures(obsvArray[:,obsvNum])
             fVec_accum[:,sNum] += thisFeatVec
             if toCSV:
                 # snd = mf.num2Sound[sNum] # SBN text representation of sound
@@ -244,12 +240,43 @@ def makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=[False,'
         if disp == 'all':
             print('File:', file)
             
-        #load audio and get observations+tempo
-        audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
-        tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
-        numObsv = obsvArray.shape[1]
-        if disp == 'all':
-            print('numObsv:', numObsv)
+        for file in filenames:
+            if disp == 'all':
+                print('File:', file)
+                
+            #load audio and get observations+tempo
+            audio, sr, Smag = loadAudioCalcSTFT(rec1_directory+file)
+            tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True) #tempo and observations need to be looked at, so that we're getting clear samples of each sound
+            totalNumObsv = obsvArray.shape[1]
+            if disp == 'all':
+                print('numObsv:', totalNumObsv)
+            
+            #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
+            #we need this for the rest of the code to work
+            
+            #iterate through observations
+            for obsvNum in range(totalNumObsv):
+                (sNum, oNum) = divmod(obsvNum, 4) # Sound Number and observation number (4 observations of each sound)
+                thisFeatVec = calcFeatures(obsvArray[:,obsvNum])
+                diff = thisFeatVec - means[:,sNum]
+                cov_accum[:,sNum,:] += np.outer(diff, diff)
+        
+        #calculate covs
+        covs = np.divide(cov_accum,(4*numFiles)-1)
+        
+        model = (transition_matrix, means, covs)
+        return model
+
+    else: # All other ML classifiers
+        
+        featfile = toCSV[1]
+        if toCSV[0]:
+            # col_names = ['Avg. Energy', 'Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Decay', 'Sustain', 'Release', 'Sound SBN']
+            col_names = ['Freq. of Max', 'Time of Max', 'Max Energy', 'Attack', 'Release', 'Sound SBN'] # For reduced features
+            featVec_df = pd.DataFrame(all_fVecs[1:,:], columns=col_names)
+            featVec_df['Sound SBN'] = featVec_df['Sound SBN'].map(mf.num2Sound)
+            featVec_df.to_csv(featfile)
+            # return featVec_df
         
         #add breakpoint here if numObsv != 40, or if anything else is unexpected (e.g. tempo != 120)
         #we need this for the rest of the code to work
@@ -359,8 +386,7 @@ def runBeatboxingRecognitionHMM(beats, obsvArray, model):
     model -- trained hidden markov model
     
     Returns:
-    soundDict -- dictionary where the keys are the ten pre-defined beatboxing sounds, and the values are lists of the 
-    location(s) of the sound in the query file
+    beat_transcription -- List of tuples, arranged as (soundName, time) for every detected sound in the query file
     this can be used to make transcriptions of the beatboxing recording
     '''
     soundDict = {}
@@ -430,14 +456,14 @@ def multiFilt(recNums, filenames):
 
 
 ## Main Function ##
-def batchBeatboxingRecognition(dataPath='query_data/', recNums=[0], model=None, disp='all'):
+def batchBeatboxingRecognition(dataPath='query_data/', recNums=[], model=None, disp='all'):
     ''' disp = 'all', 'res', or 'none'. 'res' gives results only
     '''
     # Retrieve files from directory
     filenames = os.listdir(dataPath)
     
     # If specific recording specified, only take those
-    if recNums[0]:
+    if len(recNums) > 0:
         filenames = multiFilt(recNums, filenames)
     
     # Remove any extra files
@@ -457,6 +483,10 @@ def batchBeatboxingRecognition(dataPath='query_data/', recNums=[0], model=None, 
     absGTRes = [] # Different groups of results
 
     for file in filenames:
+        # Check for extra/non-audio files
+        if file.split('.')[-1].lower() in FILE_ENDINGS:
+            continue
+
         fullName = dataPath + file
         if disp == 'all':
             print(file)
@@ -677,8 +707,24 @@ def csv2model(mean_csv='general-model_means.csv', cov_csv='general-model_covs.cs
 
 def main():
     print('Starting main...')
-    # featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', toCSV=True)
-    featVec_df = makeGeneralModel(rec1_directory='freestyle_data/', disp='all', toCSV=[True, 'freestyle_feats.csv'])
+    fVecLen = 5
+    # featVec_df = makeGeneralModel(rec1_directory='training_data/', disp='all', modelType='rf', toCSV=[True, 'rec1_feats.csv', 'over'], fVecLen=fVecLen)
+    # featVec_df = makeGeneralModel(rec1_directory='freestyle_data/', disp='all', modelType='rf', toCSV=[True, 'freestyle_feats.csv', 'over'], fVecLen=fVecLen)
+
+    beat1_obsv = 32
+    beat2_obsv = 26
+    beat3_obsv = 38
+
+    featVec_df = makeGeneralModel(rec1_directory='query_data/beat1/', disp='all', modelType='rf', 
+        toCSV=[True, 'beat1_feats.csv', 'over'], fVecLen=fVecLen, totalNumObsv=beat1_obsv)
+
+
+    # audio, sr, Smag = loadAudioCalcSTFT(filepath)
+    # tempo, beats, obsvArray = obtainObservations(audio, sr=22050, model=True)
+    # beat_transcription, runBeatboxingRecognitionHMM(beats, obsvArray, toCSV=[False, '', 'add'])
+
+    # filenames = list(os.walk('query_data/beat1/'))
+    # print(filenames[0][2])
 
 if __name__ == '__main__':
     main()

@@ -3,7 +3,7 @@
 # Final script for running beatboxing detection and comparing
 # different approaches and results
 
-import Beatboxing_Detection as bdet
+from Beatboxing_Detection import makeGeneralModel, makeIndividualModel
 import multiML as mml
 import miscFuns as mf # Optional import for direct access to helper functions
 
